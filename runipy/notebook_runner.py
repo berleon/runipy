@@ -67,9 +67,11 @@ class NotebookRunner(object):
             pylab=False,
             mpl_inline=False,
             profile_dir=None,
-            working_dir=None):
+            working_dir=None,
+            output_callback=None
+    ):
         self.km = KernelManager()
-
+        self.output_callback = output_callback
         args = []
 
         if pylab:
@@ -139,20 +141,11 @@ class NotebookRunner(object):
         """Run a notebook cell and update the output of that cell in-place."""
         logging.info('Running cell:\n%s\n', cell.input)
         self.kc.execute(cell.input)
-        reply = self.kc.get_shell_msg()
-        status = reply['content']['status']
-        traceback_text = ''
-        if status == 'error':
-            traceback_text = 'Cell raised uncaught exception: \n' + \
-                '\n'.join(reply['content']['traceback'])
-            logging.info(traceback_text)
-        else:
-            logging.info('Cell returned')
 
         outs = list()
         while True:
             try:
-                msg = self.kc.get_iopub_msg(timeout=1)
+                msg = self.kc.get_iopub_msg()
                 if msg['msg_type'] == 'status':
                     if msg['content']['execution_state'] == 'idle':
                         break
@@ -219,8 +212,20 @@ class NotebookRunner(object):
                 raise NotImplementedError(
                     'unhandled iopub message: %s' % msg_type
                 )
+            if self.output_callback:
+                self.output_callback(cell, out)
             outs.append(out)
         cell['outputs'] = outs
+
+        reply = self.kc.get_shell_msg()
+        status = reply['content']['status']
+        traceback_text = ''
+        if status == 'error':
+            traceback_text = 'Cell raised uncaught exception: \n' + \
+                '\n'.join(reply['content']['traceback'])
+            logging.info(traceback_text)
+        else:
+            logging.info('Cell returned')
 
         if status == 'error':
             raise NotebookError(traceback_text)
